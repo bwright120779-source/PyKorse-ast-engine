@@ -7,7 +7,7 @@ app.use(express.json());
 
 // ─── OMNIROUTE CONFIG ──────────────────────────────────────
 const OMNIROUTE_URL = 'https://omniroute-production-58df.up.railway.app/v1/chat/completions';
-const OMNIROUTE_API_KEY = sk-8bbc294c5fb9e7a6-3a8865-7d990477
+const OMNIROUTE_API_KEY = sk-8bbc294c5fb9e7a6-3a8865-7d990477;
 
 // ─── SCANNER ENGINE ────────────────────────────────────────
 function scanCode(code) {
