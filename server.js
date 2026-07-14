@@ -5,6 +5,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ─── OMNIROUTE CONFIG ──────────────────────────────────────
+const OMNIROUTE_URL = 'https://omniroute-production-58df.up.railway.app/v1/chat/completions';
+const OMNIROUTE_API_KEY = sk-8bbc294c5fb9e7a6-3a8865-7d990477
+
 // ─── SCANNER ENGINE ────────────────────────────────────────
 function scanCode(code) {
   const issues = [];
@@ -103,50 +107,93 @@ function scanCode(code) {
     }
   }
 
-  // ─── GENERATE FIX ────────────────────────────────────────
-  let fixedCode = code;
-  if (issues.some(i => i.type === 'Hardcoded Secret')) {
-    fixedCode = fixedCode.replace(/(const\s*(?:JWT_SECRET|API_KEY|SECRET_KEY)\s*=\s*['"])[^'"]+(['"])/gi, '$1process.env.$2$3');
-  }
-  if (issues.some(i => i.type === 'Missing Dependency Array')) {
-    fixedCode = fixedCode.replace(/(useEffect\s*\([^)]*\))\s*;?/g, '$1, []);');
-  }
-  if (issues.some(i => i.type === 'Empty Catch Block')) {
-    fixedCode = fixedCode.replace(/catch\s*\([^)]*\)\s*\{\s*\}/g, 'catch (err) {\n    console.error("Error caught:", err);\n    throw err;\n  }');
-  }
-
   const status = integrity < 30 ? 'CRITICAL' : integrity < 60 ? 'WARNING' : 'HEALTHY';
 
   return {
     integrity: Math.max(0, Math.min(100, integrity)),
     status: status,
     issues: issues,
-    fixedCode: fixedCode !== code ? fixedCode : null,
-    message: fixedCode !== code ? '✅ Fix generated. Review and deploy.' : 'No fix generated. Manual review needed.',
     issueCount: issues.length
   };
+}
+
+// ─── AI REPAIR ENGINE ──────────────────────────────────────
+async function repairWithAI(code, issues) {
+  const prompt = `
+You are a code repair expert. Fix the following code issues:
+
+${issues.map(i => `- ${i.type}: ${i.message}`).join('\n')}
+
+Here is the code:
+\`\`\`
+${code}
+\`\`\`
+
+Return ONLY the fixed code. No explanations. Keep the same structure.
+  `;
+
+  try {
+    const response = await fetch(OMNIROUTE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OMNIROUTE_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek/deepseek-chat',
+        messages: [
+          { role: 'system', content: 'You are a code repair expert. Return only fixed code.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 4000
+      })
+    });
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+  } catch (error) {
+    console.error('AI repair failed:', error);
+    return null;
+  }
 }
 
 // ─── API ENDPOINTS ─────────────────────────────────────────
 
 app.get('/', (req, res) => {
-  res.json({ status: 'online', service: 'Cerberus Engine' });
+  res.json({ status: 'online', service: 'Unvulnify Engine' });
 });
 
-app.post('/api/scan', (req, res) => {
+app.post('/api/scan', async (req, res) => {
   const { code } = req.body;
   if (!code) {
     return res.status(400).json({ error: 'No code provided' });
   }
-  try {
-    const result = scanCode(code);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+
+  // Step 1: Scan for issues
+  const scanResult = scanCode(code);
+
+  // Step 2: If issues found, repair with AI
+  let fixedCode = null;
+  if (scanResult.issues && scanResult.issues.length > 0) {
+    const aiFix = await repairWithAI(code, scanResult.issues);
+    if (aiFix) {
+      fixedCode = aiFix;
+    }
   }
+
+  // Step 3: Return results
+  res.json({
+    integrity: scanResult.integrity,
+    status: scanResult.status,
+    issues: scanResult.issues,
+    fixedCode: fixedCode,
+    message: fixedCode ? '✅ AI repair completed' : 'No fix generated',
+    issueCount: scanResult.issues.length
+  });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Cerberus Engine running on port ${PORT}`);
+  console.log(`Unvulnify Engine running on port ${PORT}`);
 });
