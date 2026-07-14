@@ -7,14 +7,13 @@ app.use(express.json());
 
 // ─── OMNIROUTE CONFIG ──────────────────────────────────────
 const OMNIROUTE_URL = 'https://omniroute-production-58df.up.railway.app/v1/chat/completions';
-const OMNIROUTE_API_KEY = sk-8bbc294c5fb9e7a6-3a8865-7d990477;
+const OMNIROUTE_API_KEY = 'sk-8bbc294c5fb9e7a6-3a8865-7d998477';
 
 // ─── SCANNER ENGINE ────────────────────────────────────────
 function scanCode(code) {
   const issues = [];
   let integrity = 100;
 
-  // RULE 1: Hardcoded secrets
   if (/JWT_SECRET\s*=\s*['"][^'"]+['"]/.test(code) ||
       /API_KEY\s*=\s*['"][^'"]+['"]/.test(code) ||
       /SECRET_KEY\s*=\s*['"][^'"]+['"]/.test(code)) {
@@ -22,47 +21,43 @@ function scanCode(code) {
       severity: 'CRITICAL',
       type: 'Hardcoded Secret',
       message: 'API key or secret exposed in plain text.',
-      fix: 'Move to environment variables: `const SECRET = process.env.SECRET;`'
+      fix: 'Move to environment variables.'
     });
     integrity -= 25;
   }
 
-  // RULE 2: SQL injection
   if (/\$\{.*\}\s*(SELECT|INSERT|UPDATE|DELETE)/i.test(code) ||
       /db\.(query|execute)\s*\(['"][^'"]*['"]\s*\+/.test(code)) {
     issues.push({
       severity: 'CRITICAL',
       type: 'SQL Injection Risk',
       message: 'SQL query uses string concatenation. Vulnerable to injection.',
-      fix: 'Use parameterized queries: `db.query("SELECT * FROM users WHERE id = ?", [userId])`'
+      fix: 'Use parameterized queries.'
     });
     integrity -= 25;
   }
 
-  // RULE 3: Empty catch block
   if (/catch\s*\([^)]*\)\s*\{\s*\}/.test(code)) {
     issues.push({
       severity: 'HIGH',
       type: 'Empty Catch Block',
       message: 'Catch block is empty. Errors are silently swallowed.',
-      fix: 'Add error handling: `catch (err) { console.error(err); throw err; }`'
+      fix: 'Add error handling.'
     });
     integrity -= 20;
   }
 
-  // RULE 4: useEffect without dependencies
   if (/useEffect\s*\(\s*\(?\s*\)?\s*=>\s*\{[^}]*\}\s*\)\s*;?\s*$/.test(code) &&
       !/useEffect\s*\([^)]*,\s*\[[^\]]*\]/.test(code)) {
     issues.push({
       severity: 'CRITICAL',
       type: 'Missing Dependency Array',
       message: 'useEffect called without dependency array. Causes infinite re-renders.',
-      fix: 'Add [] as second argument: `useEffect(() => {...}, []);`'
+      fix: 'Add [] as second argument.'
     });
     integrity -= 25;
   }
 
-  // RULE 5: Server-side useEffect
   if (/useEffect\s*\(/.test(code) &&
       !/import\s+React/.test(code) &&
       !/export\s+default\s+function/.test(code)) {
@@ -70,23 +65,21 @@ function scanCode(code) {
       severity: 'CRITICAL',
       type: 'Server-side React Hook',
       message: 'useEffect used outside React component. Will crash Node.js.',
-      fix: 'Remove useEffect or move to client-side React component.'
+      fix: 'Remove useEffect or move to client-side.'
     });
     integrity -= 30;
   }
 
-  // RULE 6: Missing await
   if (/async\s+function/.test(code) && !/await/.test(code)) {
     issues.push({
       severity: 'HIGH',
       type: 'Missing Await',
       message: 'Async function called without await. Promise may not resolve.',
-      fix: 'Add await: `await functionName()`'
+      fix: 'Add await.'
     });
     integrity -= 15;
   }
 
-  // RULE 7: Missing semicolons
   const lines = code.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -117,7 +110,7 @@ function scanCode(code) {
   };
 }
 
-// ─── AI REPAIR ENGINE ──────────────────────────────────────
+// ─── AI REPAIR ─────────────────────────────────────────────
 async function repairWithAI(code, issues) {
   const prompt = `
 You are a code repair expert. Fix the following code issues:
@@ -158,7 +151,7 @@ Return ONLY the fixed code. No explanations. Keep the same structure.
   }
 }
 
-// ─── API ENDPOINTS ─────────────────────────────────────────
+// ─── API ────────────────────────────────────────────────────
 
 app.get('/', (req, res) => {
   res.json({ status: 'online', service: 'Unvulnify Engine' });
@@ -170,10 +163,8 @@ app.post('/api/scan', async (req, res) => {
     return res.status(400).json({ error: 'No code provided' });
   }
 
-  // Step 1: Scan for issues
   const scanResult = scanCode(code);
 
-  // Step 2: If issues found, repair with AI
   let fixedCode = null;
   if (scanResult.issues && scanResult.issues.length > 0) {
     const aiFix = await repairWithAI(code, scanResult.issues);
@@ -182,7 +173,6 @@ app.post('/api/scan', async (req, res) => {
     }
   }
 
-  // Step 3: Return results
   res.json({
     integrity: scanResult.integrity,
     status: scanResult.status,
